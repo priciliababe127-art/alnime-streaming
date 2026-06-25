@@ -15,43 +15,59 @@ export async function GET(request) {
   const targetUrl = `https://otakudesu.blog/episode/${otakuSlug}-episode-${ep}-sub-indo/`;
 
   // ==========================================================================
-  // ARSITEKTUR "CALO TIKET" (3 LAYER WATERFALL BYPASS)
+  // ARSITEKTUR "KUDA TROYA" (Bypass Cloudflare via SEO Whitelist)
   // ==========================================================================
-  async function fetchLikeAMadman(url) {
-    const fakeHeaders = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'Referer': 'https://google.com/'
-    };
-
-    // --- LAYER 1: TEMBAK LANGSUNG (Siapa tahu Cloudflare sedang lengah) ---
+  async function fetchWithTrojan(url) {
+    // --- LAYER 1: GOOGLEBOT SPOOFING (Tamu VIP) ---
+    // Kita menyamar menjadi robot Google. Cloudflare sangat takut memblokir IP/User-Agent Google.
     try {
-      const r1 = await fetch(url, { headers: fakeHeaders, signal: AbortSignal.timeout(3500), cache: 'no-store' });
-      if (r1.status === 200) return await r1.text();
-    } catch (e) { /* Diam saja, turun ke Calo 1 */ }
-
-    // --- LAYER 2: VIA ALL-ORIGINS API (Calo Kelas Kakap - 90% Tembus CF) ---
-    try {
-      const r2 = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(4500) });
-      const data2 = await r2.json();
-      if (data2?.contents && !data2.contents.includes('Cloudflare')) {
-        return data2.contents;
+      const r1 = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+          'X-Forwarded-For': '66.249.66.1', // Ini adalah IP asli milik satelit Google!
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        signal: AbortSignal.timeout(4000),
+        cache: 'no-store'
+      });
+      if (r1.status === 200) {
+        const html = await r1.text();
+        if (!html.includes('Just a moment...')) return html; // Pastikan bukan halaman loading Cloudflare
       }
-    } catch (e) { /* Diam saja, turun ke Calo 2 */ }
+    } catch (e) { /* Diam saja */ }
 
-    // --- LAYER 3: VIA CORSPROXY.IO (Calo Jalur Udara) ---
+    // --- LAYER 2: BINGBOT SPOOFING (Tamu VIP Kedua) ---
     try {
-      const r3 = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, { headers: fakeHeaders, signal: AbortSignal.timeout(4500) });
+      const r2 = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)',
+          'X-Forwarded-For': '40.77.167.1', // IP Microsoft Bing
+        },
+        signal: AbortSignal.timeout(4000),
+        cache: 'no-store'
+      });
+      if (r2.status === 200) {
+        const html = await r2.text();
+        if (!html.includes('Just a moment...')) return html;
+      }
+    } catch (e) { /* Diam saja */ }
+
+    // --- LAYER 3: CODETABS PROXY (Proxy Khusus Developer) ---
+    try {
+      const r3 = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`, { 
+        signal: AbortSignal.timeout(4500) 
+      });
       if (r3.status === 200) return await r3.text();
     } catch (e) {}
 
-    throw new Error("Seluruh rute calo diblokir oleh sistem keamanan target.");
+    throw new Error("Semua penyamaran ditolak oleh Cloudflare Otakudesu.");
   }
 
   try {
-    const html = await fetchLikeAMadman(targetUrl);
+    const html = await fetchWithTrojan(targetUrl);
 
-    // REGEX KELAS SUPER (Menjaring desustream, mp4upload, filemoon, your-upload)
-    const embedRegex = /(?:https?:)?\/\/(?:desustream\.[a-z]+|filemoon\.[a-z]+|streamwish\.[a-z]+|vidhide\.[a-z]+|mp4upload\.com|dood\.[a-z]+|yourupload\.com)\/(?:e|embed|watch|v)\/[a-zA-Z0-9_-]+/i;
+    // REGEX DIPERLUAS: Menambahkan format "/beta/stream/" milik server utama Otakudesu
+    const embedRegex = /(?:https?:)?\/\/(?:desustream\.[a-z]+|filemoon\.[a-z]+|streamwish\.[a-z]+|vidhide\.[a-z]+|mp4upload\.com|dood\.[a-z]+|yourupload\.com)\/(?:e|embed|watch|v|beta\/stream)\/[a-zA-Z0-9_-]+/i;
     const match = html.match(embedRegex);
 
     if (match) {
@@ -60,7 +76,6 @@ export async function GET(request) {
       return NextResponse.json({ url: finalUrl });
     }
 
-    // Fallback Iframe paling rakus
     const greedyIframe = html.match(/<iframe[^>]+src="([^"]+(?:stream|embed|watch|file|dood|vid|moon|wish|upload)[^"]*)"/i);
     if (greedyIframe && greedyIframe[1]) {
       let iframeUrl = greedyIframe[1];
@@ -68,9 +83,9 @@ export async function GET(request) {
       return NextResponse.json({ url: iframeUrl });
     }
 
-    return NextResponse.json({ error: "Halaman berhasil dicuri, tapi tidak ada rute video di dalamnya" }, { status: 404 });
+    return NextResponse.json({ error: "Berhasil menyusup, tapi tidak ada link video di halaman tersebut." }, { status: 404 });
 
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 502 }); // 502: Bad Gateway
+    return NextResponse.json({ error: err.message }, { status: 502 });
   }
 }
