@@ -3,45 +3,64 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 export const preferredRegion = 'sin1';
 
-// ==============================================================================
-// GANTI TULISAN DI BAWAH DENGAN URL GOOGLE SCRIPT YANG KAMU DAPATKAN TADI!
-// ==============================================================================
-const GOOGLE_PROXY_URL = "https://script.google.com/macros/s/AKfycbwZl0qCM-dVHy_XaCpRvuIimI088DMLOj1VjFSjnbGlq5s11RT8i_RxFLasx2094AfYmQ/exec"; 
-
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const otakuSlug = searchParams.get('otaku'); 
   const ep = searchParams.get('ep') || '1';
 
   if (!otakuSlug || otakuSlug === 'undefined') {
-    return NextResponse.json({ error: "Slug Otaku tidak valid" }, { status: 400 });
+    return NextResponse.json({ error: "Slug tidak valid" }, { status: 400 });
   }
 
-  // Kita kembali ke Otakudesu .cloud karena itu domain utama yang paling lengkap
-  const targetUrl = `https://otakudesu.cloud/episode/${otakuSlug}-episode-${ep}-sub-indo/`;
+  // Bersihkan judul dari sisa-sisa Otakudesu
+  // Contoh: "solo-leveling-s2-sub-indo" -> "solo leveling s2"
+  const cleanTitle = otakuSlug.replace(/-/g, ' ').replace(/sub indo/i, '').trim();
   
-  // Membungkus targetUrl ke dalam Proxy Google
-  const fetchUrl = `${GOOGLE_PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
+  // Kita menargetkan Gomunime (Salah satu web streaming WP yang aman dari penjagaan ketat)
+  const targetDomain = 'https://gomunime.vip';
+  const searchUrl = `${targetDomain}/?s=${encodeURIComponent(cleanTitle + " Episode " + ep)}`;
 
   try {
-    // Vercel meminta tolong ke Google Script
-    const res = await fetch(fetchUrl, {
-      signal: AbortSignal.timeout(8000), // Kita beri waktu 8 detik untuk Google bekerja
+    // 1. MENCARI EPISODE DI GOMUNIME
+    const searchRes = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': 'https://google.com/'
+      },
+      signal: AbortSignal.timeout(5000),
       cache: 'no-store'
     });
 
-    const html = await res.text();
+    if (!searchRes.ok) throw new Error("Gagal mengakses server Gomunime");
+    const searchHtml = await searchRes.text();
 
-    if (html.includes('ERROR_PROXY')) {
-      throw new Error("Proxy Google gagal mengambil halaman.");
-    }
-    if (html.includes('Just a moment...') || html.includes('Cloudflare')) {
-      throw new Error("Bahkan Google diblokir oleh Cloudflare (Sangat Jarang Terjadi).");
+    // Mencari link artikel episode di hasil pencarian
+    // Regex ini menangkap struktur kotak hasil pencarian khas WordPress anime
+    const linkMatch = searchHtml.match(/<a href="(https:\/\/gomunime\.vip\/[^"]+episode-[^"]+)"/i);
+    
+    let episodeUrl = '';
+    if (linkMatch && linkMatch[1]) {
+      episodeUrl = linkMatch[1];
+    } else {
+      return NextResponse.json({ error: `Episode ${ep} tidak ditemukan di server alternatif.` }, { status: 404 });
     }
 
-    // REGEX PENCURI VIDEO
-    const embedRegex = /(?:https?:)?\/\/(?:desustream\.[a-z]+|filemoon\.[a-z]+|streamwish\.[a-z]+|vidhide\.[a-z]+|mp4upload\.com|dood\.[a-z]+|yourupload\.com)\/(?:e|embed|watch|v|beta\/stream)\/[a-zA-Z0-9_-]+/i;
-    const match = html.match(embedRegex);
+    // 2. MASUK KE HALAMAN EPISODE UNTUK MENCURI VIDEO
+    const episodeRes = await fetch(episodeUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': searchUrl
+      },
+      signal: AbortSignal.timeout(5000),
+      cache: 'no-store'
+    });
+
+    const episodeHtml = await episodeRes.text();
+
+    // 3. MENGGALI HARTA KARUN (LINK VIDEO)
+    // Mencari link iFrame yang disembunyikan di dalam elemen HTML
+    const embedRegex = /(?:https?:)?\/\/(?:desustream\.[a-z]+|filemoon\.[a-z]+|streamwish\.[a-z]+|vidhide\.[a-z]+|mp4upload\.com|dood\.[a-z]+|yourupload\.com|ok\.ru\/videoembed|gounlimited\.to)\/(?:e|embed|watch|v|video)\/[a-zA-Z0-9_-]+/i;
+    const match = episodeHtml.match(embedRegex);
 
     if (match) {
       let finalUrl = match[0];
@@ -49,16 +68,21 @@ export async function GET(request) {
       return NextResponse.json({ url: finalUrl });
     }
 
-    const greedyIframe = html.match(/<iframe[^>]+src="([^"]+(?:stream|embed|watch|file|dood|vid|moon|wish|upload)[^"]*)"/i);
+    // Jika Gomunime menggunakan metode iFrame langsung
+    const greedyIframe = episodeHtml.match(/<iframe[^>]+src="([^"]+)"/i);
     if (greedyIframe && greedyIframe[1]) {
       let iframeUrl = greedyIframe[1];
       if (iframeUrl.startsWith('//')) iframeUrl = 'https:' + iframeUrl;
-      return NextResponse.json({ url: iframeUrl });
+      
+      // Filter iframe iklan yang tidak penting
+      if (!iframeUrl.includes('youtube') && !iframeUrl.includes('facebook')) {
+         return NextResponse.json({ url: iframeUrl });
+      }
     }
 
-    return NextResponse.json({ error: "Halaman terbaca oleh Google, tapi tidak ada link video." }, { status: 404 });
+    return NextResponse.json({ error: "Halaman berhasil dibedah, tapi video kosong." }, { status: 404 });
 
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 502 });
+    return NextResponse.json({ error: "Koneksi ke server alternatif terputus: " + err.message }, { status: 502 });
   }
 }
