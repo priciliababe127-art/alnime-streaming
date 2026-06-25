@@ -8,47 +8,68 @@ export async function GET(request) {
   const otakuSlug = searchParams.get('otaku'); 
   const ep = searchParams.get('ep') || '1';
 
-  // 1. Tentukan target (Gomunime.top)
-  const targetDomain = 'https://gomunime.top';
-  const cleanTitle = otakuSlug.replace(/-/g, ' ').replace(/sub indo/i, '').trim();
-  const searchUrl = `${targetDomain}/?s=${encodeURIComponent(cleanTitle + " Episode " + ep)}`;
-
-  try {
-    const res = await fetch(searchUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
-      signal: AbortSignal.timeout(5000)
-    });
-    const html = await res.text();
-    
-    // Ambil link artikel
-    const linkMatch = html.match(/<a[^>]+href="(https:\/\/gomunime\.top\/[^"]+episode[^"]+)"/i);
-    if (!linkMatch) return NextResponse.json({ error: "Link episode tidak ditemukan" }, { status: 404 });
-
-    // 2. Ambil halaman episode
-    const epRes = await fetch(linkMatch[1], {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-    });
-    const epHtml = await epRes.text();
-
-    // 3. PENCURIAN SOURCE (Ini bagian yang kita incar!)
-    // Regex ini mencari tag <source src="..."> yang memiliki format googlevideo
-    const sourceRegex = /<source[^>]+src="([^"]+googlevideo\.com[^"]+)"/i;
-    const match = epHtml.match(sourceRegex);
-
-    if (match && match[1]) {
-      return NextResponse.json({ url: match[1] });
-    }
-
-    // Fallback jika tidak ketemu source: ambil iframe biasa
-    const iframeRegex = /<iframe[^>]+src="([^"]+)"/i;
-    const iframeMatch = epHtml.match(iframeRegex);
-    if (iframeMatch && iframeMatch[1]) {
-      return NextResponse.json({ url: iframeMatch[1] });
-    }
-
-    return NextResponse.json({ error: "Video source tidak ditemukan" }, { status: 404 });
-
-  } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 502 });
+  if (!otakuSlug || otakuSlug === 'undefined') {
+    return NextResponse.json({ error: "Slug tidak valid" }, { status: 400 });
   }
+
+  // Format baku URL episode Otakudesu
+  // Contoh: rezero-kara-hajimeru-isekai-seikatsu-4th-episode-1-sub-indo
+  const episodeSlug = `${otakuSlug}-episode-${ep}-sub-indo`;
+
+  // ==============================================================================
+  // JALAN TOL KOMUNITAS: Menggunakan 3 API Publik Terkuat
+  // ==============================================================================
+  const publicApis = [
+    `https://otakudesu-unofficial-api.vercel.app/v1/episode/${episodeSlug}`,
+    `https://otakudesu-anime-api.vercel.app/api/v1/episode/${episodeSlug}`,
+    `https://nya-otakudesu.vercel.app/api/v1/detail/${episodeSlug}`
+  ];
+
+  for (const apiUrl of publicApis) {
+    try {
+      const res = await fetch(apiUrl, { signal: AbortSignal.timeout(4500) });
+      if (!res.ok) continue; // Jika API ini mati/diblokir, lompat ke API berikutnya
+      
+      const json = await res.json();
+      let streamUrl = null;
+
+      // Mendeteksi berbagai format JSON dari masing-masing pembuat API
+      if (json?.data?.stream_url) streamUrl = json.data.stream_url;
+      else if (json?.stream_url) streamUrl = json.stream_url;
+      else if (json?.data?.iframe) streamUrl = json.data.iframe;
+      
+      // Jika berhasil mendapatkan link (biasanya iframe Desustream), langsung kirim!
+      if (streamUrl) {
+         if (streamUrl.startsWith('//')) streamUrl = 'https:' + streamUrl;
+         return NextResponse.json({ url: streamUrl });
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+
+  // ==============================================================================
+  // RENCANA CADANGAN: SCRAPING MANDIRI JIKA SEMUA API PUBLIK MATI
+  // ==============================================================================
+  try {
+    const backupTarget = `https://otakudesu.cloud/episode/${episodeSlug}/`;
+    const bypassUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(backupTarget)}`;
+    
+    const res = await fetch(bypassUrl, { signal: AbortSignal.timeout(5000) });
+    const json = await res.json();
+    const html = json.contents || '';
+
+    const embedRegex = /(?:https?:)?\/\/(?:desustream\.[a-z]+|filemoon\.[a-z]+|streamwish\.[a-z]+|vidhide\.[a-z]+|mp4upload\.com|dood\.[a-z]+|yourupload\.com)\/(?:e|embed|watch|v|beta\/stream)\/[a-zA-Z0-9_-]+/i;
+    const match = html.match(embedRegex);
+
+    if (match) {
+      let finalUrl = match[0];
+      if (finalUrl.startsWith('//')) finalUrl = 'https:' + finalUrl;
+      return NextResponse.json({ url: finalUrl });
+    }
+  } catch (e) {
+    // Abaikan dan biarkan turun ke pesan error bawah
+  }
+
+  return NextResponse.json({ error: "Semua API publik dan Scraping Cadangan gagal menembus server." }, { status: 404 });
 }
