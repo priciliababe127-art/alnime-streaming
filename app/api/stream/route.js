@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 
 export const dynamic = 'force-dynamic';
 export const preferredRegion = 'sin1';
@@ -12,54 +14,74 @@ export async function GET(request) {
     return NextResponse.json({ error: "Slug tidak valid" }, { status: 400 });
   }
 
-  // Bersihkan judul dari sisa-sisa Otakudesu
-  // Contoh: "solo-leveling-s2-sub-indo" -> "solo leveling s2"
-  const cleanTitle = otakuSlug.replace(/-/g, ' ').replace(/sub indo/i, '').trim();
+  // ==============================================================================
+  // TAHAP 1: SISTEM INTELIJEN (Menerjemahkan Slug Alien menjadi Judul Asli)
+  // ==============================================================================
+  let realTitle = otakuSlug.replace(/-/g, ' '); // Judul darurat jika intelijen gagal
   
-  // Kita menargetkan Gomunime (Salah satu web streaming WP yang aman dari penjagaan ketat)
+  try {
+    // 1. Membaca database animeapi.json di dalam server Vercel
+    const dbPath = path.join(process.cwd(), 'data', 'animeapi.json');
+    const dbData = fs.readFileSync(dbPath, 'utf8');
+    const db = JSON.parse(dbData);
+    
+    // 2. Mencari Jikan ID dari slug Otakudesu
+    let jikanId = Object.keys(db).find(key => db[key] === otakuSlug);
+    
+    if (jikanId) {
+      // 3. Menghubungi Jikan API untuk meminta nama asli
+      const jikanRes = await fetch(`https://api.jikan.moe/v4/anime/${jikanId}`);
+      const jikanData = await jikanRes.json();
+      if (jikanData?.data?.title) {
+        realTitle = jikanData.data.title; // Dapatkan judul asli! (Misal: "Haikyuu!!")
+      }
+    }
+  } catch (e) {
+    console.log("Intelijen gagal, memakai judul darurat:", e.message);
+  }
+
+  // ==============================================================================
+  // TAHAP 2: BERBURU DI GOMUNIME DENGAN NAMA ASLI
+  // ==============================================================================
   const targetDomain = 'https://gomunime.vip';
-  const searchUrl = `${targetDomain}/?s=${encodeURIComponent(cleanTitle + " Episode " + ep)}`;
+  
+  // Sekarang pencariannya sangat akurat: "Haikyuu!! Episode 1"
+  const searchKeyword = `${realTitle} Episode ${ep}`;
+  const searchUrl = `${targetDomain}/?s=${encodeURIComponent(searchKeyword)}`;
 
   try {
-    // 1. MENCARI EPISODE DI GOMUNIME
+    // 1. MENCARI ARTIKEL EPISODE DI GOMUNIME
     const searchRes = await fetch(searchUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Referer': 'https://google.com/'
       },
       signal: AbortSignal.timeout(5000),
       cache: 'no-store'
     });
 
-    if (!searchRes.ok) throw new Error("Gagal mengakses server Gomunime");
     const searchHtml = await searchRes.text();
 
-    // Mencari link artikel episode di hasil pencarian
-    // Regex ini menangkap struktur kotak hasil pencarian khas WordPress anime
-    const linkMatch = searchHtml.match(/<a href="(https:\/\/gomunime\.vip\/[^"]+episode-[^"]+)"/i);
+    // Regex mencari link hasil pencarian pertama
+    const linkMatch = searchHtml.match(/<a[^>]+href="(https:\/\/gomunime\.vip\/[^"]+episode[^"]+)"/i) || 
+                      searchHtml.match(/<a[^>]+href="(https:\/\/gomunime\.vip\/[^"]+)"[^>]*bookmark/i);
     
-    let episodeUrl = '';
-    if (linkMatch && linkMatch[1]) {
-      episodeUrl = linkMatch[1];
-    } else {
-      return NextResponse.json({ error: `Episode ${ep} tidak ditemukan di server alternatif.` }, { status: 404 });
+    if (!linkMatch || !linkMatch[1]) {
+      return NextResponse.json({ error: `Pencarian "${searchKeyword}" kosong di server alternatif.` }, { status: 404 });
     }
 
-    // 2. MASUK KE HALAMAN EPISODE UNTUK MENCURI VIDEO
+    const episodeUrl = linkMatch[1];
+
+    // 2. MEMBUKA ARTIKEL EPISODE
     const episodeRes = await fetch(episodeUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Referer': searchUrl
-      },
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
       signal: AbortSignal.timeout(5000),
       cache: 'no-store'
     });
 
     const episodeHtml = await episodeRes.text();
 
-    // 3. MENGGALI HARTA KARUN (LINK VIDEO)
-    // Mencari link iFrame yang disembunyikan di dalam elemen HTML
-    const embedRegex = /(?:https?:)?\/\/(?:desustream\.[a-z]+|filemoon\.[a-z]+|streamwish\.[a-z]+|vidhide\.[a-z]+|mp4upload\.com|dood\.[a-z]+|yourupload\.com|ok\.ru\/videoembed|gounlimited\.to)\/(?:e|embed|watch|v|video)\/[a-zA-Z0-9_-]+/i;
+    // 3. MENGGALI LINK VIDEO
+    const embedRegex = /(?:https?:)?\/\/(?:desustream\.[a-z]+|filemoon\.[a-z]+|streamwish\.[a-z]+|vidhide\.[a-z]+|mp4upload\.com|dood\.[a-z]+|yourupload\.com|ok\.ru\/videoembed|gounlimited\.to|streamtape\.[a-z]+)\/(?:e|embed|watch|v|video)\/[a-zA-Z0-9_-]+/i;
     const match = episodeHtml.match(embedRegex);
 
     if (match) {
@@ -68,21 +90,19 @@ export async function GET(request) {
       return NextResponse.json({ url: finalUrl });
     }
 
-    // Jika Gomunime menggunakan metode iFrame langsung
     const greedyIframe = episodeHtml.match(/<iframe[^>]+src="([^"]+)"/i);
     if (greedyIframe && greedyIframe[1]) {
       let iframeUrl = greedyIframe[1];
       if (iframeUrl.startsWith('//')) iframeUrl = 'https:' + iframeUrl;
-      
-      // Filter iframe iklan yang tidak penting
+      // Jangan sampai mengira video YouTube (iklan) sebagai anime
       if (!iframeUrl.includes('youtube') && !iframeUrl.includes('facebook')) {
          return NextResponse.json({ url: iframeUrl });
       }
     }
 
-    return NextResponse.json({ error: "Halaman berhasil dibedah, tapi video kosong." }, { status: 404 });
+    return NextResponse.json({ error: "Artikel ditemukan, tapi video kosong." }, { status: 404 });
 
   } catch (err) {
-    return NextResponse.json({ error: "Koneksi ke server alternatif terputus: " + err.message }, { status: 502 });
+    return NextResponse.json({ error: "Server Gomunime menolak koneksi." }, { status: 502 });
   }
 }
