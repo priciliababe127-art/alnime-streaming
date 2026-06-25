@@ -12,10 +12,9 @@ export default function AnimePlayer({ params }) {
   const id = params.id; 
   const currentEp = parseInt(searchParams.get('ep')) || 1;
 
-  // 1. BACA CATATAN MANUAL SECARA INSTAN! (Tidak perlu nunggu loading)
+  // BACA CATATAN MANUAL SECARA INSTAN
   const localServers = manualServers[id]?.[currentEp] || [];
 
-  // State
   const [serverList, setServerList] = useState(localServers);
   const [activeUrl, setActiveUrl] = useState(localServers.length > 0 ? localServers[0].url : null);
   
@@ -27,15 +26,13 @@ export default function AnimePlayer({ params }) {
     let isMounted = true;
     setLoadingGlobal(true);
 
-    // Reset list server ke manual tiap ganti episode
     const currentLocalServers = manualServers[id]?.[currentEp] || [];
     setServerList(currentLocalServers);
     
-    // Jika belum ada url aktif (dari manual), pastikan direset
     let currentActiveUrl = currentLocalServers.length > 0 ? currentLocalServers[0].url : null;
     setActiveUrl(currentActiveUrl);
 
-    // 2. CARI JUDUL API JIKAN DI BACKGROUND
+    // BACKGROUND TASK: Judul
     fetch(`https://api.jikan.moe/v4/anime/${id}`)
       .then(res => res.json())
       .then(data => {
@@ -45,16 +42,14 @@ export default function AnimePlayer({ params }) {
         }
       }).catch(() => {});
 
-    // 3. CARI SERVER GLOBAL DI BACKGROUND
+    // BACKGROUND TASK: Server Global
     fetch(`/api/video?id=${id}&ep=${currentEp}`)
       .then(res => res.json())
       .then(apiData => {
         if (apiData.url && isMounted) {
           const globalServer = { nama: "Auto Global (Eng Sub)", url: apiData.url };
-          
           setServerList(prev => [...prev, globalServer]);
           
-          // Jika tadi server manualnya kosong, jadikan server global ini sebagai player utama
           if (!currentActiveUrl) {
             setActiveUrl(apiData.url);
           }
@@ -70,7 +65,6 @@ export default function AnimePlayer({ params }) {
   }, [id, currentEp]);
 
   const gantiEpisode = (nomor) => {
-    // Scroll mulus ke atas saat ganti episode
     window.scrollTo({ top: 0, behavior: 'smooth' });
     router.push(`/anime/${id}?ep=${nomor}`);
   };
@@ -78,14 +72,12 @@ export default function AnimePlayer({ params }) {
   return (
     <div className="min-h-screen bg-[#0f1115] text-white p-4 md:p-8 flex flex-col items-center font-sans tracking-wide">
       
-      {/* HEADER & TOMBOL BERANDA KEKINIAN (Glassmorphism / Neon Hover) */}
+      {/* HEADER & TOMBOL BERANDA */}
       <div className="max-w-5xl w-full mb-8 flex flex-col md:flex-row justify-between items-center gap-6">
-        
         <Link 
           href="/" 
           className="group relative inline-flex items-center gap-3 px-6 py-3 bg-gray-800/40 backdrop-blur-md border border-gray-700/50 hover:border-blue-500/50 rounded-2xl text-sm font-bold text-gray-300 hover:text-white transition-all duration-300 overflow-hidden shadow-lg hover:shadow-blue-500/20"
         >
-          {/* Efek kilap saat di-hover */}
           <div className="absolute inset-0 bg-gradient-to-r from-blue-600/0 via-blue-500/10 to-blue-600/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
           <span className="text-xl group-hover:scale-110 transition-transform duration-300">🏠</span>
           <span>Beranda Utama</span>
@@ -103,12 +95,9 @@ export default function AnimePlayer({ params }) {
 
       {/* KOTAK PLAYER VIDEO */}
       <div className="max-w-5xl w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-gray-800/60 relative flex items-center justify-center group">
-        
-        {/* Render Iframe Jika Ada URL Aktif */}
         {activeUrl ? (
           <iframe src={activeUrl} allowFullScreen className="w-full h-full absolute top-0 left-0 z-10" frameBorder="0"></iframe>
         ) : (
-          /* Render Loading Hanya Jika URL Aktif Masih Kosong & Server Global Masih Dicari */
           loadingGlobal ? (
             <div className="absolute flex flex-col items-center z-0">
               <div className="w-14 h-14 border-4 border-gray-700 border-t-cyan-400 rounded-full animate-spin mb-4 shadow-[0_0_15px_rgba(34,211,238,0.4)]"></div>
@@ -123,21 +112,22 @@ export default function AnimePlayer({ params }) {
         )}
       </div>
 
-      {/* DAFTAR PILIHAN SERVER (Muncul SEKETIKA tanpa peduli status loading!) */}
+      {/* DAFTAR PILIHAN SERVER (Rata Tengah / Centered) */}
       {serverList.length > 0 && (
-        <div className="max-w-5xl w-full mt-6 bg-gray-800/40 backdrop-blur-sm p-5 rounded-2xl border border-gray-700/50 shadow-lg">
-          <h3 className="text-xs text-gray-400 mb-3 font-bold uppercase tracking-[0.2em] flex items-center gap-2">
+        <div className="max-w-5xl w-full mt-6 bg-gray-800/40 backdrop-blur-sm p-6 rounded-2xl border border-gray-700/50 shadow-lg text-center flex flex-col items-center">
+          <h3 className="text-xs text-gray-400 mb-4 font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-2">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
             Pilih Server Video
           </h3>
-          <div className="flex flex-wrap gap-3">
+          {/* justify-center memastikan tombol-tombol selalu berada di tengah */}
+          <div className="flex flex-wrap justify-center gap-3 w-full">
             {serverList.map((server, index) => (
               <button
                 key={index}
                 onClick={() => setActiveUrl(server.url)}
                 className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${
                   activeUrl === server.url 
-                    ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_0_15px_rgba(6,182,212,0.4)] border-transparent' 
+                    ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_0_15px_rgba(6,182,212,0.4)] border-transparent scale-105' 
                     : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 hover:border-gray-400'
                 }`}
               >
