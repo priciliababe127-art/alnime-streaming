@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 // Memanggil database manual kita (Pastikan letak foldernya benar: naik 3 tingkat ke folder data)
-import { manualServers } from '../../../../data/manualServers'; 
+import { manualServers } from '../../../data/manualServers'; 
 
 export default function AnimePlayer({ params }) {
   const router = useRouter();
