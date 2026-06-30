@@ -1,114 +1,69 @@
 import Link from 'next/link';
-import HeroSearch from './components/HeroSearch';
-import AdBanner from './components/AdBanner';
 
-// Komponen Pembantu: Cetakan Kartu Anime
-function AnimeCard({ item }) {
-  return (
-    <Link 
-      href={`/anime/${item.mal_id}`} 
-      className="group bg-slate-900/40 border border-slate-800/80 hover:border-cyan-500/50 rounded-2xl p-2.5 flex flex-col justify-between transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-cyan-500/10"
-    >
-      <div className="w-full aspect-[3/4] rounded-xl overflow-hidden relative bg-slate-950 mb-2.5">
-        <img 
-          src={item.images.jpg.large_image_url} 
-          alt={item.title} 
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-        />
-        <div className="absolute top-2 right-2 bg-slate-950/80 backdrop-blur-md px-2 py-1 rounded-lg border border-slate-800 flex items-center gap-1">
-          <span className="text-[10px] font-mono text-amber-400 font-bold">★ {item.score || 'N/A'}</span>
-        </div>
-        <div className="absolute bottom-2 left-2 bg-cyan-500 text-slate-950 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded">
-          {item.type || 'TV'}
-        </div>
-      </div>
-      
-      <div>
-        <h4 className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-cyan-400 transition-colors line-clamp-2 leading-snug">
-          {item.title}
-        </h4>
-      </div>
+export default async function Home() {
+  const API_BASE = "https://hianime-omega.vercel.app/api/v2";
+  let latestAnimes = [];
 
-      <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-800/60 text-[10px] font-mono text-slate-400">
-        <span className="text-emerald-400">{item.status === 'Currently Airing' ? '● On-Going' : '○ Tamat'}</span>
-        <span className="text-slate-500">{item.year || 'N/A'}</span>
-      </div>
-    </Link>
-  );
-}
-
-export default async function HomePage() {
-  // Fungsi untuk membuang duplikat ID
-  const getUnique = (arr) => {
-    return arr.filter((item, index, self) =>
-      index === self.findIndex((t) => t.mal_id === item.mal_id)
-    );
-  };
-
-  // 1. Ambil 12 Anime Musim Ini
-  const airingRes = await fetch('https://api.jikan.moe/v4/seasons/now?limit=12', { next: { revalidate: 3600 } });
-  const airingJson = await airingRes.json();
-  const airingList = getUnique(airingJson.data || []);
-
-  // 2. Ambil 12 Anime Terpopuler
-  const topRes = await fetch('https://api.jikan.moe/v4/top/anime?limit=12', { next: { revalidate: 3600 } });
-  const topJson = await topRes.json();
-  const topList = getUnique(topJson.data || []);
+  try {
+    // Sesuai Dokumentasi: endpoint /home untuk halaman utama
+    const res = await fetch(`${API_BASE}/hianime/home`, { cache: 'no-store' });
+    const data = await res.json();
+    latestAnimes = data?.data?.latestEpisodeAnimes || [];
+  } catch (error) {
+    console.error("Gagal mengambil data beranda:", error);
+  }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
+    <div className="min-h-screen bg-[#090a0f] text-white p-6 md:p-12 font-sans selection:bg-cyan-500 selection:text-white">
       
-      {/* NAVBAR */}
-      <header className="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="text-xl font-black tracking-wider font-mono">AL<span className="text-cyan-400">NIME</span></span>
-            <span className="text-[9px] font-mono bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-0.5 rounded-full">VIP</span>
-          </Link>
-          <nav className="flex gap-6 text-xs font-mono text-slate-400">
-            <Link href="/" className="text-cyan-400 font-bold">Beranda</Link>
-            <Link href="/search" className="hover:text-white transition-colors">Cari Anime</Link>
-          </nav>
+      {/* HEADER HERO (Cyberpunk-Lite) */}
+      <header className="mb-12 flex flex-col md:flex-row justify-between items-center gap-6 border-b border-gray-800/80 pb-8">
+        <div className="text-center md:text-left">
+          <h1 className="text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-500 via-cyan-400 to-teal-300 drop-shadow-lg tracking-tighter">
+            ALNIME.
+          </h1>
+          <p className="text-gray-400 mt-2 text-sm font-semibold tracking-[0.2em] uppercase">
+            HiAnime Engine • V2.0
+          </p>
         </div>
       </header>
 
-      {/* HERO SECTION DENGAN BANNER IKLAN */}
-      <section className="max-w-4xl mx-auto text-center px-4 py-8">
-        
-        {/* TEMPAT IKLAN BANNER */}
-        <div className="w-full max-w-3xl mx-auto mb-8 min-h-[100px] bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-center overflow-hidden">
-           <AdBanner />
+      {/* GRID EPISODE TERBARU */}
+      <section className="max-w-7xl mx-auto">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="w-1.5 h-8 bg-cyan-400 rounded-full animate-pulse shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
+          <h2 className="text-2xl md:text-3xl font-extrabold text-gray-100">Baru Rilis</h2>
         </div>
 
-        <h1 className="text-2xl sm:text-4xl font-black mt-4 mb-8 tracking-tight">
-          ALNime Streaming Anime Terbaru & Terlengkap 
-        </h1>
+        {latestAnimes.length === 0 ? (
+          <div className="text-center text-gray-500 py-20 font-medium">Gagal memuat data dari server HiAnime.</div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+            {latestAnimes.map((anime) => (
+              <Link href={`/anime/${anime.id}`} key={anime.id} className="group relative flex flex-col gap-3 transition-all duration-300 hover:-translate-y-2">
+                
+                {/* KOTAK POSTER */}
+                <div className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-xl border border-gray-800/60 group-hover:border-cyan-400/50 transition-colors">
+                  <img src={anime.poster} alt={anime.name} className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-700 ease-in-out" />
+                  
+                  {/* GRADASI GELAP */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent opacity-90"></div>
+                  
+                  {/* BADGE EPISODE (Sesuai output docs: anime.episodes.sub) */}
+                  <div className="absolute top-3 right-3 bg-gray-900/80 backdrop-blur-sm border border-gray-700 text-white text-xs font-black px-2.5 py-1 rounded-md shadow-lg">
+                    EP {anime.episodes?.sub || '?'}
+                  </div>
+                </div>
 
-        <HeroSearch />
+                {/* JUDUL ANIME */}
+                <h3 className="font-bold text-sm line-clamp-2 text-gray-300 group-hover:text-cyan-300 transition-colors leading-relaxed">
+                  {anime.name}
+                </h3>
+              </Link>
+            ))}
+          </div>
+        )}
       </section>
-
-      {/* KONTEN UTAMA */}
-      <main className="max-w-6xl mx-auto px-4 flex flex-col gap-12">
-        
-        <section>
-          <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-3">
-            <h2 className="text-base sm:text-lg font-bold font-mono tracking-wide text-cyan-400">⚡ UPDATE TERBARU</h2>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {airingList.map((anime) => <AnimeCard key={anime.mal_id} item={anime} />)}
-          </div>
-        </section>
-
-        <section>
-          <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-3">
-            <h2 className="text-base sm:text-lg font-bold font-mono tracking-wide text-amber-400">⭐ ANIME TERPOPULER</h2>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {topList.map((anime) => <AnimeCard key={anime.mal_id} item={anime} />)}
-          </div>
-        </section>
-
-      </main>
     </div>
   );
 }
