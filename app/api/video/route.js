@@ -8,80 +8,48 @@ export async function GET(request) {
   const malId = searchParams.get('id'); 
   const ep = searchParams.get('ep') || '1';
 
-  if (!malId) return NextResponse.json({ error: "MAL ID wajib disertakan!" }, { status: 400 });
+  // 1. Ambil Judul Asli dari Jikan (karena HiAnime butuh query teks)
+  const jikanRes = await fetch(`https://api.jikan.moe/v4/anime/${malId}`);
+  const jikanData = await jikanRes.json();
+  const title = jikanData?.data?.title;
+
+  if (!title) {
+    return NextResponse.json({ error: "Anime tidak ditemukan" }, { status: 404 });
+  }
 
   try {
-    // ==============================================================================
-    // LANGKAH 1: IDENTIFIKASI GLOBAL & TERJEMAHAN (JIKAN)
-    // ==============================================================================
-    const jikanRes = await fetch(`https://api.jikan.moe/v4/anime/${malId}`, { signal: AbortSignal.timeout(5000) });
-    const jikanData = await jikanRes.json();
+    // 2. Cari Anime di API Pribadimu
+    const searchRes = await fetch(`https://hianime-api-eta-eight.vercel.app/api/v2/hianime/search?q=${encodeURIComponent(title)}`);
+    const searchData = await searchRes.json();
     
-    if (!jikanData?.data) {
-      return NextResponse.json({ error: "Anime tidak ditemukan di database MyAnimeList." }, { status: 404 });
-    }
+    const animeId = searchData?.data?.animes?.[0]?.id;
+    if (!animeId) throw new Error("Gagal menemukan ID anime di HiAnime");
 
-    // KUNCI SUKSES GLOBAL: Kita prioritaskan Judul Bahasa Inggris!
-    const officialTitle = jikanData.data.title_english || jikanData.data.title;
+    // 3. Ambil daftar episode
+    const epRes = await fetch(`https://hianime-api-eta-eight.vercel.app/api/v2/hianime/anime/${animeId}/episodes`);
+    const epData = await epRes.json();
     
-    // Bersihkan judul: "Re:ZERO -Starting Life in Another World-" -> "Re ZERO Starting Life"
-    const cleanQuery = officialTitle.replace(/[^a-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 4).join(' ');
+    // Cari episode yang sesuai (HiAnime biasanya pakai ID episode)
+    const episode = epData?.data?.episodes?.find(e => e.number == ep);
+    if (!episode) throw new Error("Episode tidak ditemukan");
 
-    // ==============================================================================
-    // LANGKAH 2: INVASI KE GOGOANIME (ANITAKU)
-    // ==============================================================================
-    const baseUrl = 'https://anitaku.pe'; // Domain resmi Gogoanime saat ini
-    const searchUrl = `${baseUrl}/search.html?keyword=${encodeURIComponent(cleanQuery)}`;
+    // 4. Ambil Link Streaming
+    const streamRes = await fetch(`https://hianime-api-eta-eight.vercel.app/api/v2/hianime/episode/sources?animeEpisodeId=${episode.episodeId}`);
+    const streamData = await streamRes.json();
 
-    const searchRes = await fetch(searchUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      signal: AbortSignal.timeout(5000)
+    // HiAnime biasanya memberikan array server (sub/dub), kita ambil yang pertama
+    const watchUrl = streamData?.data?.sources?.find(s => s.url)?.url;
+
+    if (!watchUrl) throw new Error("Link stream tidak tersedia");
+
+    return NextResponse.json({
+      title: title,
+      episode: ep,
+      url: watchUrl,
+      server: "HiAnime Engine"
     });
-    
-    const searchHtml = await searchRes.text();
-
-    // Mencari slug anime dari hasil pencarian (Contoh: /category/re-zero-season-3)
-    const categoryMatch = searchHtml.match(/\/category\/([^"]+)/i);
-    if (!categoryMatch) {
-      return NextResponse.json({ error: `Pencarian global untuk "${cleanQuery}" belum tersedia.` }, { status: 404 });
-    }
-
-    const animeSlug = categoryMatch[1];
-
-    // ==============================================================================
-    // LANGKAH 3: AMBIL VIDEO EPISODE SPESIFIK
-    // ==============================================================================
-    // Format Gogoanime sangat baku: /judul-anime-episode-1
-    const episodeUrl = `${baseUrl}/${animeSlug}-episode-${ep}`;
-    
-    const epRes = await fetch(episodeUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      signal: AbortSignal.timeout(5000)
-    });
-    
-    const epHtml = await epRes.text();
-
-    // ==============================================================================
-    // LANGKAH 4: EKSTRAKSI IFRAME PLAYER (VIDSTREAMING / GOGO-PLAY)
-    // ==============================================================================
-    // Gogoanime menyimpan video mereka di server super cepat bernama embtaku/vidstreaming
-    const iframeMatch = epHtml.match(/<iframe src="([^"]+)"/i);
-
-    if (iframeMatch && iframeMatch[1]) {
-      let finalUrl = iframeMatch[1];
-      if (finalUrl.startsWith('//')) finalUrl = 'https:' + finalUrl;
-
-      return NextResponse.json({ 
-        title: officialTitle,
-        episode: ep,
-        url: finalUrl,
-        server: "Global (English Sub)"
-      });
-    }
-
-    return NextResponse.json({ error: `Halaman episode ${ep} ditemukan, namun server video sedang offline.` }, { status: 404 });
 
   } catch (err) {
-    return NextResponse.json({ error: "Mesin Global mengalami gangguan: " + err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
