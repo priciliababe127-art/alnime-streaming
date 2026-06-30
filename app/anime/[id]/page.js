@@ -1,16 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSearchParams, useRouter, useParams } from 'next/navigation';
+import { use, useState, useEffect } from 'react'; // Tambahkan 'use'
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { manualServers } from '../../../data/manualServers'; 
 
-export default function AnimePlayer() {
+export default function AnimePlayer({ params }) {
+  // RESOLVE PARAMS (Ini kuncinya agar tidak undefined)
+  const resolvedParams = use(params);
+  const id = resolvedParams?.id;
+  
   const router = useRouter();
   const searchParams = useSearchParams();
-  const params = useParams();
-  
-  const id = params?.id; 
   const currentEp = parseInt(searchParams.get('ep')) || 1;
 
   const [serverList, setServerList] = useState([]);

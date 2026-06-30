@@ -7,44 +7,35 @@ export async function GET(request) {
   const malId = searchParams.get('id'); 
   const ep = searchParams.get('ep') || '1';
 
-  if (!malId) return NextResponse.json({ error: "ID Anime hilang!" }, { status: 400 });
-
   try {
-    // 1. Ambil Nama Anime via Jikan
+    // 1. Ambil Judul
     const jikanRes = await fetch(`https://api.jikan.moe/v4/anime/${malId}`);
     const jikanData = await jikanRes.json();
-    const title = jikanData?.data?.title_english || jikanData?.data?.title;
+    const title = jikanData?.data?.title || jikanData?.data?.title_english;
 
-    if (!title) throw new Error("Anime tidak ditemukan di database global.");
-
-    // 2. Search di Server Omega
+    // 2. Search (Base: /api/v2/hianime/search)
     const searchRes = await fetch(`https://hianime-omega.vercel.app/api/v2/hianime/search?q=${encodeURIComponent(title)}`);
     const searchData = await searchRes.json();
-    
     const animeId = searchData?.data?.animes?.[0]?.id;
-    if (!animeId) throw new Error("Anime tidak ada di database HiAnime.");
 
-    // 3. Ambil Episode
+    if (!animeId) return NextResponse.json({ error: "Anime tidak ditemukan" }, { status: 404 });
+
+    // 3. Episodes (Base: /api/v2/hianime/anime/{id}/episodes)
     const epRes = await fetch(`https://hianime-omega.vercel.app/api/v2/hianime/anime/${animeId}/episodes`);
     const epData = await epRes.json();
-    
-    // Mencari episode berdasarkan nomor
     const episode = epData?.data?.episodes?.find(e => e.number == ep);
-    if (!episode) throw new Error(`Episode ${ep} belum rilis.`);
+    
+    if (!episode) return NextResponse.json({ error: "Episode tidak ditemukan" }, { status: 404 });
 
-    // 4. Ambil Sumber Video
+    // 4. Sources (Base: /api/v2/hianime/episode/sources)
     const streamRes = await fetch(`https://hianime-omega.vercel.app/api/v2/hianime/episode/sources?animeEpisodeId=${episode.episodeId}`);
     const streamData = await streamRes.json();
 
     const watchUrl = streamData?.data?.sources?.find(s => s.url)?.url;
-    if (!watchUrl) throw new Error("Link video kosong dari server.");
 
-    return NextResponse.json({
-      title: title,
-      episode: ep,
-      url: watchUrl,
-      server: "HiAnime Omega"
-    });
+    if (!watchUrl) return NextResponse.json({ error: "Link streaming gagal" }, { status: 500 });
+
+    return NextResponse.json({ title, episode: ep, url: watchUrl });
 
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
